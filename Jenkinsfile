@@ -1,31 +1,60 @@
+properties([pipelineTriggers([githubPush()])])
+
 pipeline {
+    environment {
+        // name of the image without tag
+        dockerRepo = "chetan311/app"
+        dockerCredentials = 'dockerhub'
+        dockerImageVersioned = ""
+        dockerImageLatest = ""
+    }
+
     agent any
 
     stages {
-        stage('Build') {
+        /* checkout repo */
+        stage('Checkout SCM') {
             steps {
-                script {
-                    docker.build('app')
+                checkout([
+                 $class: 'GitSCM',
+                 branches: [[name: 'master']],
+                 userRemoteConfigs: [[
+                    url: 'https://github.com/Chetan4458/nodejs-jenkins',
+                    credentialsId: 'Github',
+                 ]]
+                ])
+            }
+        }
+        stage("Building docker image"){
+            steps{
+                script{
+                    dockerImageVersioned = docker.build dockerRepo + ":$BUILD_NUMBER"
+                    dockerImageLatest = docker.build dockerRepo + ":latest"
                 }
             }
         }
-
-        stage('Test') {
-            steps {
-                script {
-                    docker.image('app').inside {
-                        sh 'npm test'  // or any other test command
+        stage("Pushing image to registry"){
+            steps{
+                script{
+                    // if you want to use custom registry, use the first argument, which is blank in this case
+                    docker.withRegistry( 'https://hub.docker.com/repository/docker/chetan311/app/general', dockerCredentials){
+                        dockerImageVersioned.push()
+                        dockerImageLatest.push()
                     }
                 }
             }
         }
-
-        stage('Deploy') {
+        stage('Cleaning up') {
             steps {
-                script {
-                    docker.image('app').push('chetan311/app:latest')
-                }
+                sh "docker rmi $dockerRepo:$BUILD_NUMBER"
             }
         }
     }
+
+    /* Cleanup workspace */
+    post {
+       always {
+           deleteDir()
+       }
+   }
 }
